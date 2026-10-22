@@ -1,0 +1,66 @@
+{
+  "name": "RSS to voiceover (LeapFun Ultra)",
+  "nodes": [
+    {
+      "parameters": { "pollTimes": { "item": [{ "mode": "everyHour" }] }, "feedUrl": "https://feeds.bbci.co.uk/news/technology/rss.xml" },
+      "name": "RSS Feed Trigger",
+      "type": "n8n-nodes-base.rssFeedReadTrigger",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "modelId": { "__rl": true, "mode": "list", "value": "gpt-4o-mini" },
+        "messages": {
+          "values": [
+            { "role": "system", "content": "You write 60-second spoken news scripts. Plain sentences, no headings, no emojis." },
+            { "content": "=Title: {{ $json.title }}\nSummary: {{ $json.contentSnippet }}" }
+          ]
+        }
+      },
+      "name": "Write 60s script",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [260, 0]
+    },
+    {
+      "parameters": {
+        "resource": "speech",
+        "operation": "generate",
+        "text": "={{ $json.message.content }}",
+        "engine": "ultra",
+        "voiceSource": "preset",
+        "voice": { "__rl": true, "mode": "id", "value": "aurora" },
+        "options": {
+          "style": "newscaster",
+          "pace": "natural",
+          "note": "Confident and warm, like a morning radio anchor",
+          "format": "mp3",
+          "fileName": "={{ $('RSS Feed Trigger').item.json.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase() }}.mp3"
+        }
+      },
+      "name": "LeapFun",
+      "type": "n8n-nodes-leapfun.leapFun",
+      "typeVersion": 1,
+      "position": [520, 0],
+      "credentials": { "leapFunApi": { "id": "", "name": "LeapFun API" } }
+    },
+    {
+      "parameters": {
+        "name": "={{ $binary.data.fileName }}",
+        "driveId": { "__rl": true, "mode": "list", "value": "My Drive" },
+        "folderId": { "__rl": true, "mode": "list", "value": "root" }
+      },
+      "name": "Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [780, 0]
+    }
+  ],
+  "connections": {
+    "RSS Feed Trigger": { "main": [[{ "node": "Write 60s script", "type": "main", "index": 0 }]] },
+    "Write 60s script": { "main": [[{ "node": "LeapFun", "type": "main", "index": 0 }]] },
+    "LeapFun": { "main": [[{ "node": "Google Drive", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

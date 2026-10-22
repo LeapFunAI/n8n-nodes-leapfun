@@ -1,0 +1,82 @@
+{
+  "name": "Sheet batch narration (LeapFun Pro)",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "documentId": { "__rl": true, "mode": "list", "value": "" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Sheet1" },
+        "options": {}
+      },
+      "name": "Read rows",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [240, 0]
+    },
+    {
+      "parameters": {
+        "resource": "speech",
+        "operation": "generate",
+        "text": "={{ $json.script }}",
+        "engine": "pro",
+        "voiceSource": "preset",
+        "voice": { "__rl": true, "mode": "id", "value": "={{ $json.voice || 'ruby' }}" },
+        "options": {
+          "emotion": "={{ $json.emotion || 'neutral' }}",
+          "format": "mp3",
+          "fileName": "={{ $json.id }}.mp3"
+        }
+      },
+      "name": "LeapFun",
+      "type": "n8n-nodes-leapfun.leapFun",
+      "typeVersion": 1,
+      "position": [500, 0],
+      "credentials": { "leapFunApi": { "id": "", "name": "LeapFun API" } }
+    },
+    {
+      "parameters": {
+        "name": "={{ $binary.data.fileName }}",
+        "driveId": { "__rl": true, "mode": "list", "value": "My Drive" },
+        "folderId": { "__rl": true, "mode": "list", "value": "root" }
+      },
+      "name": "Upload audio",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [760, 0]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "__rl": true, "mode": "list", "value": "" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Sheet1" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Read rows').item.json.id }}",
+            "audio_url": "={{ $json.webViewLink }}",
+            "credits": "={{ $('LeapFun').item.json.creditsUsed }}"
+          },
+          "matchingColumns": ["id"]
+        },
+        "options": {}
+      },
+      "name": "Write link back",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1020, 0]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": { "main": [[{ "node": "Read rows", "type": "main", "index": 0 }]] },
+    "Read rows": { "main": [[{ "node": "LeapFun", "type": "main", "index": 0 }]] },
+    "LeapFun": { "main": [[{ "node": "Upload audio", "type": "main", "index": 0 }]] },
+    "Upload audio": { "main": [[{ "node": "Write link back", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

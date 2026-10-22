@@ -1,0 +1,18 @@
+{
+	"node": "n8n-nodes-leapfun.leapFun",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["Marketing & Content", "Utility"],
+	"resources": {
+		"credentialDocumentation": [
+			{
+				"url": "https://leapfun.ai/developers/"
+			}
+		],
+		"primaryDocumentation": [
+			{
+				"url": "https://leapfun.ai/developers/n8n/"
+			}
+		]
+	}
+}
