@@ -5,10 +5,13 @@ import type {
 	ILoadOptionsFunctions,
 	JsonObject,
 } from 'n8n-workflow';
-import { NodeApiError, sleep } from 'n8n-workflow';
+import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 
 const CREDENTIAL_NAME = 'leapFunApi';
 const MAX_RETRIES = 3;
+// The LeapFun API refunds the credit reservation before answering 5xx, and 503 is raised
+// before any reservation, so retrying these cannot double-bill. 4xx are never retried.
+const RETRY_STATUSES = new Set([429, 502, 503, 504]);
 
 interface LeapFunErrorBody {
 	error?: {
@@ -18,6 +21,16 @@ interface LeapFunErrorBody {
 		param?: string | null;
 		request_id?: string;
 	};
+}
+
+/** Shape of the axios error that n8n keeps on `NodeApiError.cause`. */
+interface AxiosLike {
+	response?: {
+		status?: number;
+		data?: unknown;
+		headers?: Record<string, unknown>;
+	};
+	message?: string;
 }
 
 export interface AudioResult {
@@ -36,10 +49,30 @@ async function baseUrl(ctx: IExecuteFunctions | ILoadOptionsFunctions): Promise<
 	return (creds.baseUrl || 'https://api.leapfun.ai/v1').replace(/\/+$/, '');
 }
 
+function axiosOf(err: unknown): AxiosLike | undefined {
+	const e = err as { cause?: unknown; response?: unknown };
+	// httpRequestWithAuthentication throws NodeApiError whose `cause` is the axios error;
+	// fall back to the object itself in case a raw axios error ever surfaces.
+	const cause = e?.cause as AxiosLike | undefined;
+	if (cause && typeof cause === 'object' && 'response' in cause) return cause;
+	if (e && typeof e === 'object' && 'response' in e) return e as AxiosLike;
+	return undefined;
+}
+
+function statusOf(err: unknown): number {
+	const e = err as { httpCode?: string | number | null; statusCode?: number };
+	const fromNode = Number(e?.httpCode ?? e?.statusCode ?? 0);
+	if (fromNode) return fromNode;
+	return Number(axiosOf(err)?.response?.status ?? 0);
+}
+
 function parseErrorBody(body: unknown): LeapFunErrorBody['error'] | undefined {
 	try {
 		if (Buffer.isBuffer(body)) {
 			return (JSON.parse(body.toString('utf8')) as LeapFunErrorBody).error;
+		}
+		if (body instanceof ArrayBuffer) {
+			return (JSON.parse(Buffer.from(body).toString('utf8')) as LeapFunErrorBody).error;
 		}
 		if (typeof body === 'string') {
 			return (JSON.parse(body) as LeapFunErrorBody).error;
@@ -53,20 +86,23 @@ function parseErrorBody(body: unknown): LeapFunErrorBody['error'] | undefined {
 	return undefined;
 }
 
+function retryAfterMs(err: unknown, attempt: number): number {
+	const headers = axiosOf(err)?.response?.headers ?? {};
+	const raw = headers['retry-after'] ?? headers['Retry-After'];
+	const ra = Number(raw);
+	if (Number.isFinite(ra) && ra > 0) return Math.min(ra, 30) * 1000;
+	return 1000 * 2 ** attempt;
+}
+
 /**
- * Turn an HTTP failure into a NodeApiError with a message that says what happened
- * and how to continue (n8n UX guidelines: no "error/failure" wording, actionable).
+ * Turn an HTTP failure into a NodeApiError whose message says what happened and how to
+ * continue (n8n UX guidelines). The thrown object is already a NodeApiError, and
+ * `new NodeApiError(node, existingNodeApiError, …)` returns it unchanged, so we build the
+ * error from a plain object carrying the API's own error body instead.
  */
 export function toNodeError(ctx: IExecuteFunctions | ILoadOptionsFunctions, err: unknown, itemIndex?: number): NodeApiError {
-	const e = err as {
-		httpCode?: string | number;
-		statusCode?: number;
-		response?: { status?: number; body?: unknown; headers?: Record<string, string> };
-		message?: string;
-		cause?: { response?: { status?: number; body?: unknown } };
-	};
-	const status = Number(e.httpCode ?? e.statusCode ?? e.response?.status ?? e.cause?.response?.status ?? 0);
-	const body = parseErrorBody(e.response?.body ?? e.cause?.response?.body);
+	const status = statusOf(err);
+	const body = parseErrorBody(axiosOf(err)?.response?.data);
 	const prefix = itemIndex !== undefined ? `[Item ${itemIndex}] ` : '';
 
 	let message: string;
@@ -92,12 +128,24 @@ export function toNodeError(ctx: IExecuteFunctions | ILoadOptionsFunctions, err:
 			break;
 		case 400:
 			message = `${prefix}${body?.message ?? 'LeapFun rejected the request. Check the parameters.'}`;
+			if (body?.param) description = `Parameter: ${body.param}`;
+			break;
+		case 503:
+			message = `${prefix}LeapFun is busy right now. Retry in a few seconds.`;
 			break;
 		default:
 			message = `${prefix}${body?.message ?? 'LeapFun did not return audio. Retry in a moment.'}`;
-			if (body?.request_id) description = `Reference: ${body.request_id}`;
 	}
-	return new NodeApiError(ctx.getNode(), (err as JsonObject) ?? {}, {
+	if (body?.request_id) description = `${description ? `${description} · ` : ''}Reference: ${body.request_id}`;
+
+	const source: JsonObject = {
+		message: body?.message ?? (err as Error)?.message ?? 'Request failed',
+		status,
+		type: body?.type ?? null,
+		param: body?.param ?? null,
+		request_id: body?.request_id ?? null,
+	};
+	return new NodeApiError(ctx.getNode(), source, {
 		message,
 		description,
 		httpCode: status ? String(status) : undefined,
@@ -105,19 +153,38 @@ export function toNodeError(ctx: IExecuteFunctions | ILoadOptionsFunctions, err:
 	});
 }
 
-function statusOf(err: unknown): number {
-	const e = err as { httpCode?: string | number; statusCode?: number; response?: { status?: number } };
-	return Number(e.httpCode ?? e.statusCode ?? e.response?.status ?? 0);
+/** Non-HTTP failures (unexpected payload shape, programming errors) → NodeOperationError. */
+export function toOperationError(ctx: IExecuteFunctions, err: unknown, itemIndex: number): NodeOperationError {
+	const e = err instanceof Error ? err : new Error(String(err));
+	return new NodeOperationError(ctx.getNode(), e, {
+		itemIndex,
+		description: 'The LeapFun API answered in an unexpected shape. Update the node or contact support@leapfun.ai.',
+	});
 }
 
-function retryAfterMs(err: unknown, attempt: number): number {
-	const e = err as { response?: { headers?: Record<string, string> } };
-	const ra = Number(e.response?.headers?.['retry-after']);
-	if (Number.isFinite(ra) && ra > 0) return Math.min(ra, 30) * 1000;
-	return 1000 * 2 ** attempt;
+export function isHttpError(err: unknown): boolean {
+	return statusOf(err) > 0;
 }
 
-/** JSON request with auth; retries 429/5xx with backoff (Retry-After honoured). */
+async function withRetry<T>(fn: () => Promise<T>, ctx: IExecuteFunctions | ILoadOptionsFunctions, itemIndex?: number): Promise<T> {
+	let lastErr: unknown;
+	for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+		try {
+			return await fn();
+		} catch (err) {
+			lastErr = err;
+			const status = statusOf(err);
+			if (RETRY_STATUSES.has(status) && attempt < MAX_RETRIES) {
+				await sleep(retryAfterMs(err, attempt));
+				continue;
+			}
+			throw toNodeError(ctx, err, itemIndex);
+		}
+	}
+	throw toNodeError(ctx, lastErr, itemIndex);
+}
+
+/** JSON request with auth; retries 429/502/503/504 with backoff (Retry-After honoured). */
 export async function apiRequest<T = unknown>(
 	ctx: IExecuteFunctions | ILoadOptionsFunctions,
 	method: IHttpRequestMethods,
@@ -132,21 +199,11 @@ export async function apiRequest<T = unknown>(
 	if (qs) {
 		options.qs = Object.fromEntries(Object.entries(qs).filter(([, v]) => v !== undefined && v !== ''));
 	}
-	let lastErr: unknown;
-	for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-		try {
-			return (await ctx.helpers.httpRequestWithAuthentication.call(ctx, CREDENTIAL_NAME, options)) as T;
-		} catch (err) {
-			lastErr = err;
-			const status = statusOf(err);
-			if ((status === 429 || status >= 500) && attempt < MAX_RETRIES) {
-				await sleep(retryAfterMs(err, attempt));
-				continue;
-			}
-			throw toNodeError(ctx, err, itemIndex);
-		}
-	}
-	throw toNodeError(ctx, lastErr, itemIndex);
+	return withRetry(
+		async () => (await ctx.helpers.httpRequestWithAuthentication.call(ctx, CREDENTIAL_NAME, options)) as T,
+		ctx,
+		itemIndex,
+	);
 }
 
 /** POST that returns audio bytes plus the LeapFun accounting headers. */
@@ -161,23 +218,28 @@ export async function speechRequest(
 		method: 'POST',
 		url,
 		body,
-		json: true,
+		// Not `json: true`: that would send `Accept: application/json` to an endpoint that answers
+		// with audio. axios still serialises the plain-object body as JSON.
+		headers: { 'Content-Type': 'application/json', Accept: 'audio/mpeg, audio/wav, application/json' },
 		encoding: 'arraybuffer',
 		returnFullResponse: true,
 	};
-	let lastErr: unknown;
-	for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-		try {
+	return withRetry(
+		async () => {
 			const resp = (await ctx.helpers.httpRequestWithAuthentication.call(ctx, CREDENTIAL_NAME, options)) as {
-				body: ArrayBuffer | Buffer;
-				headers: Record<string, string>;
+				body: ArrayBuffer | Buffer | string;
+				headers: Record<string, unknown>;
 			};
 			const headers = Object.fromEntries(
 				Object.entries(resp.headers ?? {}).map(([k, v]) => [k.toLowerCase(), String(v)]),
 			);
 			const mimeType = (headers['content-type'] || 'audio/mpeg').split(';')[0].trim();
+			let audio: Buffer;
+			if (Buffer.isBuffer(resp.body)) audio = resp.body;
+			else if (typeof resp.body === 'string') audio = Buffer.from(resp.body, 'binary');
+			else audio = Buffer.from(resp.body as ArrayBuffer);
 			return {
-				audio: Buffer.isBuffer(resp.body) ? resp.body : Buffer.from(resp.body as ArrayBuffer),
+				audio,
 				mimeType,
 				jobId: headers['x-job-id'] ?? '',
 				creditsUsed: Number(headers['x-credits-used'] ?? 0),
@@ -186,15 +248,8 @@ export async function speechRequest(
 				ignoredParams: headers['x-ignored-params'] ? headers['x-ignored-params'].split(',') : [],
 				degraded: headers['x-audio-degraded'] === '1',
 			};
-		} catch (err) {
-			lastErr = err;
-			const status = statusOf(err);
-			if ((status === 429 || status >= 500) && attempt < MAX_RETRIES) {
-				await sleep(retryAfterMs(err, attempt));
-				continue;
-			}
-			throw toNodeError(ctx, err, itemIndex);
-		}
-	}
-	throw toNodeError(ctx, lastErr, itemIndex);
+		},
+		ctx,
+		itemIndex,
+	);
 }

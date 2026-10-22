@@ -10,7 +10,7 @@ This is an n8n community node for [LeapFun AI](https://leapfun.ai), a text-to-sp
 
 Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes/installation/) in the n8n community nodes documentation. Search for `n8n-nodes-leapfun` in **Settings → Community Nodes**.
 
-To use the node as a tool inside an AI Agent on a self-hosted instance, start n8n with `N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE=true`.
+To use the node as a tool inside an AI Agent on a self-hosted instance, start n8n with `N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE=true`. Note that an agent only receives the JSON part of the output (job ID, credits, engine); the audio file lands on the item's binary property, so route it to a storage node in the same workflow.
 
 ## Credentials
 
@@ -55,7 +55,8 @@ Error messages tell you what to do next:
 | 402 | Not enough credits for this request. Top up at app.leapfun.ai/billing. |
 | 403 | Your LeapFun plan does not include API access. Upgrade at leapfun.ai/pricing. |
 | 413 | The text is longer than 5,000 characters. Split it into smaller items. |
-| 429 | LeapFun rate limit reached. The node retries up to three times with backoff before surfacing this. |
+| 429 | LeapFun rate limit reached. The node retries up to three times, honouring `Retry-After`, before surfacing this. |
+| 502 / 503 | Engine or API busy. Retried up to three times; LeapFun refunds credits before answering 5xx, so retries never double-bill. |
 
 Turn on **Continue On Fail** to receive these as JSON on the failing item instead of stopping the workflow.
 

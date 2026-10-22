@@ -66,12 +66,26 @@ export const speechFields: INodeProperties[] = [
 		displayOptions: { show: { resource: ['speech'], operation: ['generate'] } },
 	},
 	{
+		displayName: 'Voice Source',
+		name: 'voiceSource',
+		type: 'options',
+		options: [
+			{ name: 'Preset Voice', value: 'preset' },
+			{ name: 'My Cloned / Designed Voice', value: 'mine' },
+		],
+		default: 'preset',
+		description: 'Whether to use a LeapFun preset voice or a voice from your own workspace',
+		displayOptions: { show: { resource: ['speech'], operation: ['generate'] } },
+	},
+	{
 		displayName: 'Voice',
 		name: 'voice',
 		type: 'resourceLocator',
 		default: { mode: 'list', value: '' },
 		required: true,
 		description: 'Preset voice. The list is filtered by the selected engine.',
+		// Re-fetch the list when Engine changes, and let the UI resolve an Engine expression first.
+		typeOptions: { loadOptionsDependsOn: ['engine'] },
 		modes: [
 			{
 				displayName: 'From List',
@@ -87,18 +101,6 @@ export const speechFields: INodeProperties[] = [
 			},
 		],
 		displayOptions: { show: { resource: ['speech'], operation: ['generate'], voiceSource: ['preset'] } },
-	},
-	{
-		displayName: 'Voice Source',
-		name: 'voiceSource',
-		type: 'options',
-		options: [
-			{ name: 'Preset Voice', value: 'preset' },
-			{ name: 'My Cloned / Designed Voice', value: 'mine' },
-		],
-		default: 'preset',
-		description: 'Whether to use a LeapFun preset voice or a voice from your own workspace',
-		displayOptions: { show: { resource: ['speech'], operation: ['generate'] } },
 	},
 	{
 		displayName: 'Voice ID',

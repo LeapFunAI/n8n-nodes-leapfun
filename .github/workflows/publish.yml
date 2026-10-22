@@ -1,30 +1,46 @@
-# Publishes to npm with provenance when a version tag is pushed.
-# n8n verified community nodes must be published from GitHub Actions with a provenance
-# statement (required from 2026-05-01). Configure npm Trusted Publishing for this repository
-# and workflow file name (publish.yml), or store a granular token as NPM_TOKEN.
-name: Publish to npm
+# Publishes this n8n community node package to npm on every version tag push.
+#
+# n8n requires verified community nodes to be published via GitHub Actions with npm
+# provenance (mandatory from 2026-05-01). `npm run release` (n8n-node release) detects
+# GITHUB_ACTIONS, runs lint + build, then `npm publish` with RELEASE_MODE=true and
+# NPM_CONFIG_PROVENANCE=true. A plain `npm publish` is blocked by the prepublishOnly guard.
+#
+# One-time setup, pick one:
+#   A) OIDC Trusted Publishing (recommended): npmjs.com → package → Settings → Trusted
+#      Publishers → GitHub Actions, owner `leapfun-ai`, repo `n8n-nodes-leapfun`,
+#      workflow `publish.yml`. Leave NPM_TOKEN unset. Needs npm ≥ 11.5 (Node lts/* = 24).
+#   B) Granular access token with publish rights stored as the NPM_TOKEN repo secret.
+#
+# Tag convention: v0.1.0, v0.2.0 … (change the filter to '*.*.*' for bare tags).
+name: Publish
 
 on:
   push:
     tags:
-      - 'v*'
-
-permissions:
-  contents: read
-  id-token: write
+      - 'v*.*.*'
 
 jobs:
   publish:
+    name: Publish to npm
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # OIDC token for provenance attestation
+      contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: 22
-          registry-url: 'https://registry.npmjs.org'
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run build
-      - run: npm publish --provenance --access public
+          node-version: 'lts/*'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Release
+        run: |
+          [ -n "$NPM_TOKEN" ] && npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
+          npm run release
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

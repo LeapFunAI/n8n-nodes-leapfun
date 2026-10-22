@@ -16,7 +16,7 @@ import {
 	voiceFields,
 	voiceOperations,
 } from './descriptions';
-import { apiRequest, speechRequest, toNodeError } from './transport';
+import { apiRequest, isHttpError, speechRequest, toNodeError, toOperationError } from './transport';
 
 interface VoiceRow {
 	voice?: string;
@@ -71,7 +71,9 @@ export class LeapFun implements INodeType {
 	methods = {
 		listSearch: {
 			async searchVoices(this: ILoadOptionsFunctions, filter?: string): Promise<INodeListSearchResult> {
-				const engine = this.getCurrentNodeParameter('engine') as string | undefined;
+				let engine = this.getCurrentNodeParameter('engine') as string | undefined;
+				// An unresolved expression (e.g. "={{ $json.engine }}") cannot filter the list; show all voices.
+				if (engine && engine.startsWith('=')) engine = undefined;
 				const data = await apiRequest<VoicesResponse>(this, 'GET', '/voices', undefined, {
 					engine: engine || undefined,
 					q: filter || undefined,
@@ -109,8 +111,10 @@ export class LeapFun implements INodeType {
 					});
 				}
 			} catch (err) {
-				const nodeError =
-					err instanceof NodeOperationError || err instanceof NodeApiError ? err : toNodeError(this, err, i);
+				let nodeError: NodeOperationError | NodeApiError;
+				if (err instanceof NodeOperationError || err instanceof NodeApiError) nodeError = err;
+				else if (isHttpError(err)) nodeError = toNodeError(this, err, i);
+				else nodeError = toOperationError(this, err, i);
 				if (this.continueOnFail()) {
 					returnData.push({
 						json: { error: nodeError.message, description: nodeError.description ?? undefined },
@@ -160,7 +164,9 @@ async function generateSpeech(this: IExecuteFunctions, i: number): Promise<INode
 		if (voice) body.voice = voice;
 	}
 	if (options.speed !== undefined) body.speed = options.speed;
-	if (options.emotion && options.emotion !== 'neutral') body.emotion = options.emotion;
+	// Sent whenever the option is present, including 'neutral' (the API treats neutral as a no-op,
+	// so a user can explicitly force neutral delivery).
+	if (options.emotion) body.emotion = options.emotion;
 	if (options.style) body.style = options.style;
 	if (options.pace) body.pace = options.pace;
 	if (options.accent) body.accent = options.accent;
@@ -168,7 +174,7 @@ async function generateSpeech(this: IExecuteFunctions, i: number): Promise<INode
 	if (options.exaggeration !== undefined && engine === 'expressive') body.exaggeration = options.exaggeration;
 
 	const result = await speechRequest(this, '/tts', body, i);
-	const ext = result.mimeType === 'audio/wav' ? 'wav' : 'mp3';
+	const ext = result.mimeType.includes('wav') ? 'wav' : 'mp3';
 	const fileName = (options.fileName && options.fileName.trim()) || `speech-${result.jobId || i}.${ext}`;
 	const binaryPropertyName = options.binaryPropertyName || 'data';
 	const binary = await this.helpers.prepareBinaryData(result.audio, fileName, result.mimeType);
@@ -182,6 +188,7 @@ async function generateSpeech(this: IExecuteFunctions, i: number): Promise<INode
 			voice: body.voice ?? body.voice_id ?? null,
 			format: ext,
 			characters: text.length,
+			utf8Bytes: Buffer.byteLength(text, 'utf8'),
 			ignoredParams: result.ignoredParams,
 			degraded: result.degraded,
 		},
