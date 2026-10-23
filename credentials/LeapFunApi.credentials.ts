@@ -24,7 +24,7 @@ export class LeapFunApi implements ICredentialType {
 			default: '',
 			required: true,
 			description:
-				'Create a key in LeapFun under Settings → Developer API (Creator plan or above). Keys start with lf_sk_.',
+				'Create a key in LeapFun under Settings → Developer API (available on every plan). Keys start with lf_sk_.',
 		},
 		{
 			displayName: 'Base URL',

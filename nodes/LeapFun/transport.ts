@@ -115,7 +115,7 @@ export function toNodeError(ctx: IExecuteFunctions | ILoadOptionsFunctions, err:
 			message = `${prefix}Not enough credits for this request. Top up at app.leapfun.ai/billing.`;
 			break;
 		case 403:
-			message = `${prefix}Your LeapFun plan does not include API access. Upgrade at leapfun.ai/pricing.`;
+			message = `${prefix}LeapFun refused this request for your plan or workspace role. Check leapfun.ai/pricing or ask a workspace admin.`;
 			break;
 		case 404:
 			message = `${prefix}${body?.message ?? 'The requested voice was not found. Pick one from the Voice list.'}`;

@@ -14,7 +14,7 @@ To use the node as a tool inside an AI Agent on a self-hosted instance, start n8
 
 ## Credentials
 
-1. Sign in to [app.leapfun.ai](https://app.leapfun.ai) on the Creator plan or above.
+1. Sign in to [app.leapfun.ai](https://app.leapfun.ai). Every plan includes the API, Free too; higher plans get higher rate limits, and commercial use of the audio starts on Starter.
 2. Open **Settings → Developer API** and click **Create key**. Keys start with `lf_sk_` and are shown once.
 3. In n8n, create a **LeapFun API** credential and paste the key. Leave **Base URL** at `https://api.leapfun.ai/v1`.
 
@@ -53,7 +53,7 @@ Error messages tell you what to do next:
 | --- | --- |
 | 401 | The API key was not accepted. Check the LeapFun credential. |
 | 402 | Not enough credits for this request. Top up at app.leapfun.ai/billing. |
-| 403 | Your LeapFun plan does not include API access. Upgrade at leapfun.ai/pricing. |
+| 403 | LeapFun refused this request for your plan or workspace role. Check leapfun.ai/pricing or ask a workspace admin. |
 | 413 | The text is longer than 5,000 characters. Split it into smaller items. |
 | 429 | LeapFun rate limit reached. The node retries up to three times, honouring `Retry-After`, before surfacing this. |
 | 502 / 503 | Engine or API busy. Retried up to three times; LeapFun refunds credits before answering 5xx, so retries never double-bill. |
