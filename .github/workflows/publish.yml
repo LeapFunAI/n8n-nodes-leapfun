@@ -7,7 +7,7 @@
 #
 # One-time setup, pick one:
 #   A) OIDC Trusted Publishing (recommended): npmjs.com → package → Settings → Trusted
-#      Publishers → GitHub Actions, owner `leapfun-ai`, repo `n8n-nodes-leapfun`,
+#      Publishers → GitHub Actions, owner `LeapFunAI`, repo `n8n-nodes-leapfun`,
 #      workflow `publish.yml`. Leave NPM_TOKEN unset. Needs npm ≥ 11.5 (Node lts/* = 24).
 #   B) Granular access token with publish rights stored as the NPM_TOKEN repo secret.
 #

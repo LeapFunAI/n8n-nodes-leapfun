@@ -19,10 +19,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/leapfun-ai/n8n-nodes-leapfun.git"
+    "url": "git+https://github.com/LeapFunAI/n8n-nodes-leapfun.git"
   },
   "bugs": {
-    "url": "https://github.com/leapfun-ai/n8n-nodes-leapfun/issues"
+    "url": "https://github.com/LeapFunAI/n8n-nodes-leapfun/issues"
   },
   "engines": {
     "node": ">=20.15"
