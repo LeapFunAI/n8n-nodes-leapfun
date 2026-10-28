@@ -21,6 +21,10 @@
     "type": "git",
     "url": "git+https://github.com/LeapFunAI/n8n-nodes-leapfun.git"
   },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "bugs": {
     "url": "https://github.com/LeapFunAI/n8n-nodes-leapfun/issues"
   },
