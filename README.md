@@ -10,6 +10,8 @@ This is an n8n community node for [LeapFun AI](https://leapfun.ai), a text-to-sp
 
 Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes/installation/) in the n8n community nodes documentation. Search for `n8n-nodes-leapfun` in **Settings → Community Nodes**.
 
+Self-hosted n8n can install the node today. On n8n Cloud, community nodes appear once n8n has verified them; verification for this node is in review.
+
 To use the node as a tool inside an AI Agent on a self-hosted instance, start n8n with `N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE=true`. Note that an agent only receives the JSON part of the output (job ID, credits, engine); the audio file lands on the item's binary property, so route it to a storage node in the same workflow.
 
 ## Credentials
